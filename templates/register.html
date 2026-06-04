@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChatBD - Register</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Segoe UI',sans-serif;
+}
+
+body{
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    background:linear-gradient(
+        135deg,
+        #14143a,
+        #23235b,
+        #2f2f7d
+    );
+
+    overflow:hidden;
+}
+
+/* Animated Background */
+body::before{
+    content:"";
+    position:absolute;
+    width:500px;
+    height:500px;
+    background:#7c3aed;
+    border-radius:50%;
+    top:-200px;
+    right:-150px;
+    filter:blur(150px);
+    opacity:.35;
+}
+
+body::after{
+    content:"";
+    position:absolute;
+    width:400px;
+    height:400px;
+    background:#6366f1;
+    border-radius:50%;
+    bottom:-150px;
+    left:-100px;
+    filter:blur(150px);
+    opacity:.30;
+}
+
+/* Glass Card */
+.card{
+    width:420px;
+    padding:45px 35px;
+
+    background:rgba(255,255,255,0.08);
+
+    border:1px solid rgba(255,255,255,0.15);
+
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+
+    border-radius:30px;
+
+    box-shadow:
+    0 10px 40px rgba(0,0,0,.35);
+
+    z-index:2;
+
+    animation:slideUp .8s ease;
+}
+
+@keyframes slideUp{
+    from{
+        opacity:0;
+        transform:translateY(60px);
+    }
+    to{
+        opacity:1;
+        transform:translateY(0);
+    }
+}
+
+.logo{
+    text-align:center;
+    margin-bottom:35px;
+}
+
+.logo h1{
+    color:white;
+    font-size:42px;
+    font-weight:700;
+
+    animation:float 3s ease-in-out infinite;
+}
+
+.logo span{
+    color:#8b5cf6;
+}
+
+.logo p{
+    color:#d1d5db;
+    margin-top:12px;
+    font-size:15px;
+}
+
+@keyframes float{
+    0%{transform:translateY(0);}
+    50%{transform:translateY(-8px);}
+    100%{transform:translateY(0);}
+}
+
+label{
+    display:block;
+    margin-bottom:8px;
+    margin-top:18px;
+
+    color:#f8fafc;
+    font-size:15px;
+    font-weight:500;
+}
+
+input{
+    width:100%;
+    padding:16px;
+
+    border-radius:15px;
+
+    border:1px solid rgba(255,255,255,.15);
+
+    background:rgba(255,255,255,.08);
+
+    color:white;
+
+    font-size:16px;
+
+    outline:none;
+    transition:.3s;
+}
+
+input::placeholder{
+    color:#cbd5e1;
+}
+
+input:focus{
+    border-color:#8b5cf6;
+
+    box-shadow:
+    0 0 20px rgba(139,92,246,.45);
+
+    transform:scale(1.02);
+}
+
+.btn{
+    width:100%;
+
+    margin-top:28px;
+
+    padding:16px;
+
+    border:none;
+    border-radius:15px;
+
+    background:
+    linear-gradient(
+        90deg,
+        #8b5cf6,
+        #6366f1
+    );
+
+    color:white;
+
+    font-size:18px;
+    font-weight:700;
+
+    cursor:pointer;
+
+    transition:.3s;
+}
+
+.btn:hover{
+    transform:translateY(-3px);
+
+    box-shadow:
+    0 10px 25px rgba(99,102,241,.45);
+}
+
+.link{
+    margin-top:24px;
+    text-align:center;
+    color:#cbd5e1;
+    font-size:15px;
+}
+
+.link a{
+    color:#8b5cf6;
+    text-decoration:none;
+    font-weight:700;
+}
+
+.link a:hover{
+    text-decoration:underline;
+}
+
+.error{
+    margin-top:15px;
+    padding:12px;
+
+    border-radius:12px;
+
+    background:rgba(239,68,68,.15);
+
+    color:#fecaca;
+
+    border:1px solid rgba(239,68,68,.25);
+}
+</style>
+
+</head>
+<body>
+
+<div class="card">
+
+    <div class="logo">
+        <h1>💬 Ali<span>nova</span></h1>
+        <p>নতুন অ্যাকাউন্ট তৈরি করুন</p>
+    </div>
+
+    <form method="POST">
+
+        <label>ইউজারনেম</label>
+
+        <input
+            type="text"
+            name="username"
+            placeholder="আপনার নাম লিখুন"
+            required
+        >
+
+        <label>পাসওয়ার্ড</label>
+
+        <input
+            type="password"
+            name="password"
+            placeholder="পাসওয়ার্ড লিখুন"
+            required
+        >
+
+        {% if error %}
+        <div class="error">
+            ⚠️ {{ error }}
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn">
+            রেজিস্টার করুন
+        </button>
+
+    </form>
+
+    <div class="link">
+        আগে থেকেই আছেন?
+        <a href="/login">লগইন করুন</a>
+    </div>
+
+</div>
+
+</body>
+</html>

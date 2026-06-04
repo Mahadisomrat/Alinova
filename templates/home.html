@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChatBD</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#e5ddd5;min-height:100vh}
+body.dark{background:#111;color:#eee}
+.app{max-width:480px;margin:0 auto;background:#fff;min-height:100vh;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,.1)}
+body.dark .app{background:#1a1a1a}
+.header{background:#1a7a4a;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+.header h1{flex:1;font-size:20px;font-weight:600}
+.header-actions{display:flex;gap:14px;align-items:center}
+.header-actions button{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px}
+.my-avatar{width:36px;height:36px;border-radius:50%;cursor:pointer;object-fit:cover;border:2px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;background:#155f3a;color:#fff;flex-shrink:0}
+.search-wrap{background:#16703f;padding:8px 12px 10px}
+.search-wrap input{width:100%;background:rgba(255,255,255,.15);border:none;border-radius:20px;padding:9px 16px;color:#fff;font-size:14px;outline:none}
+.search-wrap input::placeholder{color:rgba(255,255,255,.7)}
+.tabs{display:flex;border-bottom:1px solid #eee;background:#fff}
+body.dark .tabs{background:#1a1a1a;border-color:#333}
+.tab{flex:1;padding:12px;text-align:center;font-size:13px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:#1a7a4a;border-color:#1a7a4a}
+.list{flex:1;overflow-y:auto}
+.item{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:.5px solid #f0f0f0;cursor:pointer;transition:.15s;text-decoration:none;color:inherit}
+body.dark .item{border-color:#2a2a2a}
+.item:hover{background:#f5f5f5}
+body.dark .item:hover{background:#242424}
+.avatar{width:50px;height:50px;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;flex-shrink:0}
+.info{flex:1;min-width:0}
+.top-row{display:flex;justify-content:space-between;align-items:center}
+.name{font-size:16px;font-weight:500}
+.time{font-size:12px;color:#888}
+.preview{font-size:13px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;margin-top:3px}
+.badge{background:#25d366;color:#fff;border-radius:50%;width:22px;height:22px;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:500;flex-shrink:0}
+.online-dot{width:11px;height:11px;background:#25d366;border-radius:50%;border:2px solid #fff;margin-top:-12px;margin-left:38px;flex-shrink:0}
+/* Profile modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.modal.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:28px 24px;width:320px;text-align:center}
+body.dark .modal-box{background:#222}
+.modal-box h2{color:#1a7a4a;margin-bottom:16px}
+.pic-wrap{position:relative;display:inline-block;cursor:pointer;margin-bottom:12px}
+.pic-wrap .big-av{width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid #25d366;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:600}
+.cam-btn{position:absolute;bottom:2px;right:2px;background:#25d366;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px}
+.modal-box input[type=text]{width:100%;margin:8px 0;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;outline:none}
+.modal-box input:focus{border-color:#1a7a4a}
+.save-btn{width:100%;padding:11px;background:#1a7a4a;color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;margin-top:8px}
+.close-btn{width:100%;padding:10px;background:#f0f0f0;color:#555;border:none;border-radius:10px;font-size:14px;cursor:pointer;margin-top:8px}
+/* Group modal */
+.group-form label{display:block;text-align:left;font-size:13px;color:#555;margin:10px 0 4px;font-weight:500}
+.group-form input{width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;outline:none;margin-bottom:4px}
+.member-list{max-height:120px;overflow-y:auto;text-align:left;border:1px solid #eee;border-radius:8px;padding:6px}
+.member-item{display:flex;align-items:center;gap:8px;padding:5px;font-size:14px;cursor:pointer}
+.member-item input{width:auto;margin:0}
+/* Toast */
+#toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-100px);background:#1a1a1a;color:#fff;border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:12px;font-size:14px;transition:transform .3s;z-index:200;min-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast .t-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0;background:#1a7a4a;color:#fff}
+#toast .t-info .t-name{font-weight:600;font-size:14px}
+#toast .t-info .t-msg{font-size:13px;opacity:.8;margin-top:2px}
+#file-input{display:none}
+</style>
+</head>
+<body>
+<div id="toast" onclick="goToNotif()">
+  <div class="t-av" id="t-av"></div>
+  <div class="t-info"><div class="t-name" id="t-name"></div><div class="t-msg" id="t-msg"></div></div>
+</div>
+
+<!-- Profile Modal -->
+<div class="modal" id="profile-modal">
+  <div class="modal-box">
+    <h2>👤 আমার প্রোফাইল</h2>
+    <div class="pic-wrap" onclick="document.getElementById('file-input').click()">
+      <div class="big-av" id="modal-avatar" style="background:#1a7a4a;color:#fff;">{{ username[0]|upper }}</div>
+      <div class="cam-btn">📷</div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" onchange="uploadPic(event)">
+    <input type="text" id="edit-name" value="{{ username }}" placeholder="নাম" disabled />
+    <input type="text" id="edit-about" value="Hey! I am using ChatBD" placeholder="About" />
+    <button class="save-btn" onclick="saveProfile()">সেভ করুন</button>
+    <button class="close-btn" onclick="closeModal('profile-modal')">বাতিল</button>
+  </div>
+</div>
+
+<!-- Group Create Modal -->
+<div class="modal" id="group-modal">
+  <div class="modal-box">
+    <h2>👥 নতুন গ্রুপ</h2>
+    <div class="group-form">
+      <label>গ্রুপের নাম</label>
+      <input type="text" id="group-name" placeholder="গ্রুপের নাম দিন" />
+      <label>মেম্বার বেছে নিন</label>
+      <div class="member-list" id="member-list"></div>
+    </div>
+    <button class="save-btn" onclick="createGroup()">গ্রুপ তৈরি করুন</button>
+    <button class="close-btn" onclick="closeModal('group-modal')">বাতিল</button>
+  </div>
+</div>
+
+<div class="app">
+  <div class="header">
+    <div class="my-avatar" id="my-avatar" onclick="openModal('profile-modal')">{{ username[0]|upper }}</div>
+    <h1>💬 Alinova</h1>
+    <div class="header-actions">
+      <button onclick="openModal('group-modal')" title="গ্রুপ তৈরি">👥</button>
+      <button onclick="toggleDark()" title="Dark Mode" id="dark-btn">🌙</button>
+      <button onclick="location.href='/logout'" title="লগআউট">🚪</button>
+    </div>
+  </div>
+  <div class="search-wrap">
+    <input id="search" placeholder="🔍 ইউজার বা গ্রুপ খুঁজুন..." oninput="filterList()" />
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('chats')">💬 Chats</div>
+    <div class="tab" onclick="switchTab('groups')">👥 Groups</div>
+  </div>
+  <div class="list" id="chats-tab">
+    {% for u in users %}
+    <a class="item" href="/chat/{{ u }}" data-name="{{ u }}">
+      {% if users_data[u].profile_pic %}
+        <img class="avatar" src="{{ users_data[u].profile_pic }}" />
+      {% else %}
+        <div class="avatar" style="background:#{{ ['e67e22','3498db','9b59b6','e74c3c','1abc9c'][loop.index0 % 5] }}20;color:#{{ ['e67e22','3498db','9b59b6','e74c3c','1abc9c'][loop.index0 % 5] }}">{{ u[0]|upper }}</div>
+      {% endif %}
+      <div class="info">
+        <div class="top-row">
+          <span class="name">{{ u }}</span>
+          {% if u in online %}<span style="font-size:12px;color:#25d366">● Online</span>{% else %}<span style="font-size:12px;color:#aaa">○ Offline</span>{% endif %}
+        </div>
+        <div class="preview">{{ users_data[u].about }}</div>
+      </div>
+    </a>
+    {% endfor %}
+    {% if not users %}<div style="padding:40px;text-align:center;color:#aaa">কোনো ইউজার নেই</div>{% endif %}
+  </div>
+  <div class="list" id="groups-tab" style="display:none">
+    {% for g in groups %}
+    <a class="item" href="/group/{{ g }}" data-name="{{ g }}">
+      <div class="avatar" style="background:#1a7a4a20;color:#1a7a4a;font-size:22px">👥</div>
+      <div class="info">
+        <div class="top-row">
+          <span class="name">{{ g }}</span>
+          <span style="font-size:12px;color:#888">{{ groups_data[g].members|length }} members</span>
+        </div>
+        <div class="preview">{{ groups_data[g].members|join(', ') }}</div>
+      </div>
+    </a>
+    {% endfor %}
+    {% if not groups %}<div style="padding:40px;text-align:center;color:#aaa">কোনো গ্রুপ নেই। নতুন গ্রুপ তৈরি করুন!</div>{% endif %}
+  </div>
+</div>
+
+<script>
+const socket = io();
+const me = "{{ username }}";
+let notifRoom = null;
+
+socket.on('user_status', d => {
+  document.querySelectorAll('.item').forEach(el => {
+    if(el.dataset.name === d.user) {
+      const span = el.querySelector('span[style*="font-size:12px"]');
+      if(span) { span.textContent = d.status==='online'?'● Online':'○ Offline'; span.style.color=d.status==='online'?'#25d366':'#aaa'; }
+    }
+  });
+});
+
+socket.on('new_notification', d => {
+  if(d.from !== me) showToast(d.from, d.text, d.profile_pic, d.room);
+});
+
+socket.on('profile_updated', d => {
+  document.querySelectorAll('.item').forEach(el => {
+    if(el.dataset.name === d.user) {
+      let av = el.querySelector('.avatar');
+      if(av.tagName === 'DIV') {
+        const img = document.createElement('img');
+        img.className = 'avatar'; img.src = d.profile_pic;
+        av.replaceWith(img);
+      } else { av.src = d.profile_pic; }
+    }
+  });
+});
+
+socket.on('group_created', d => {
+  if(d.members.includes(me)) location.reload();
+});
+
+function showToast(from, text, pic, room) {
+  notifRoom = room;
+  document.getElementById('t-name').textContent = from;
+  document.getElementById('t-msg').textContent = text;
+  const av = document.getElementById('t-av');
+  if(pic) { av.style.backgroundImage=`url(${pic})`; av.style.backgroundSize='cover'; av.textContent=''; }
+  else { av.textContent = from[0].toUpperCase(); av.style.backgroundImage=''; }
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 4000);
+}
+
+function goToNotif() {
+  if(notifRoom) {
+    const parts = notifRoom.split('_');
+    const other = parts.find(p=>p!==me);
+    if(other) location.href='/chat/'+other;
+  }
+}
+
+function uploadPic(e) {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const pic = ev.target.result;
+    fetch('/upload_pic', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pic})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success) {
+        const av = document.getElementById('modal-avatar');
+        av.style.backgroundImage=`url(${pic})`; av.style.backgroundSize='cover'; av.textContent='';
+        const myAv = document.getElementById('my-avatar');
+        myAv.style.backgroundImage=`url(${pic})`; myAv.style.backgroundSize='cover'; myAv.textContent='';
+      }
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveProfile() { closeModal('profile-modal'); }
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function toggleDark() {
+  document.body.classList.toggle('dark');
+  document.getElementById('dark-btn').textContent = document.body.classList.contains('dark')?'☀️':'🌙';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', (i===0&&tab==='chats')||(i===1&&tab==='groups')));
+  document.getElementById('chats-tab').style.display = tab==='chats'?'block':'none';
+  document.getElementById('groups-tab').style.display = tab==='groups'?'block':'none';
+}
+
+function filterList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('.item').forEach(el => {
+    el.style.display = el.dataset.name.toLowerCase().includes(q) ? 'flex' : 'none';
+  });
+}
+
+// Populate group member list
+const allUsers = {{ users | tojson }};
+const ml = document.getElementById('member-list');
+allUsers.forEach(u => {
+  ml.innerHTML += `<label class="member-item"><input type="checkbox" value="${u}"> ${u}</label>`;
+});
+
+function createGroup() {
+  const name = document.getElementById('group-name').value.trim();
+  const checked = [...document.querySelectorAll('#member-list input:checked')].map(i=>i.value);
+  if(!name) { alert('গ্রুপের নাম দিন'); return; }
+  if(checked.length===0) { alert('অন্তত একজন মেম্বার বেছে নিন'); return; }
+  fetch('/create_group',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,members:checked})})
+  .then(r=>r.json()).then(d=>{ if(d.success){closeModal('group-modal');location.reload();} else alert(d.error); });
+}
+</script>
+</body></html>
