@@ -1,6 +1,5 @@
 flask
 flask-socketio
 simple-websocket
-eventlet
 gunicorn
 supabase
