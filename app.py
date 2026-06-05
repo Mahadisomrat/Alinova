@@ -236,7 +236,6 @@ def handle_message(data):
         'profile_pic': user.get('profile_pic') if user else None,
         'id': datetime.now().strftime('%f')
     }
-    db_save_message(room, msg)
     emit('receive_message', msg, room=room)
     emit('new_notification', {
         'from': sender,
@@ -244,6 +243,7 @@ def handle_message(data):
         'room': room,
         'profile_pic': user.get('profile_pic') if user else None
     }, broadcast=True)
+    db_save_message(room, msg)
 
 @socketio.on('send_group_message')
 def handle_group_message(data):
@@ -261,8 +261,8 @@ def handle_group_message(data):
         'profile_pic': user.get('profile_pic') if user else None,
         'id': datetime.now().strftime('%f')
     }
-    db_save_group_message(gname, msg)
     emit('receive_group_message', msg, room='group_' + gname)
+    db_save_group_message(gname, msg)
 
 @socketio.on('join_group')
 def on_join_group(data):
