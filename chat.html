@@ -61,7 +61,7 @@
   const other = "{{ other }}";
   const room = "{{ room }}";
 
-  const socket = io({ transports: ['polling'] });
+ const socket = io();
 
   socket.emit('join', { room: room });
 
