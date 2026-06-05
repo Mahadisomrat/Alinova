@@ -219,7 +219,6 @@ def on_stop_typing(data):
 def handle_message(data):
     room = data['room']
     sender = data['from']
-    user = db_get_user(sender)
     msg = {
         'from': sender,
         'text': data.get('text', ''),
@@ -233,7 +232,7 @@ def handle_message(data):
         'edited': False,
         'deleted': False,
         'reactions': {},
-        'profile_pic': user.get('profile_pic') if user else None,
+        'profile_pic': data.get('profile_pic'),
         'id': datetime.now().strftime('%f')
     }
     emit('receive_message', msg, room=room)
@@ -241,7 +240,7 @@ def handle_message(data):
         'from': sender,
         'text': data.get('text', '📎 File'),
         'room': room,
-        'profile_pic': user.get('profile_pic') if user else None
+        'profile_pic': data.get('profile_pic')
     }, broadcast=True)
     db_save_message(room, msg)
 
@@ -249,7 +248,6 @@ def handle_message(data):
 def handle_group_message(data):
     gname = data['group']
     sender = data['from']
-    user = db_get_user(sender)
     msg = {
         'from': sender,
         'text': data.get('text', ''),
@@ -258,7 +256,7 @@ def handle_group_message(data):
         'file_type': data.get('file_type'),
         'duration': data.get('duration'),
         'time': datetime.now().strftime('%I:%M %p'),
-        'profile_pic': user.get('profile_pic') if user else None,
+        'profile_pic': data.get('profile_pic'),
         'id': datetime.now().strftime('%f')
     }
     emit('receive_group_message', msg, room='group_' + gname)
