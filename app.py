@@ -6,7 +6,7 @@ from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = 'chatbd_secret_2024'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
