@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChatBD — {{ other }}</title>
+<title>Alinova — {{ other }}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: sans-serif; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -12,6 +13,7 @@
   .back { color: rgba(255,255,255,0.6); text-decoration: none; font-size: 20px; }
   .avatar-sm { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #7c6fcd, #5a4fcf); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 16px; }
   .info .name { color: #fff; font-size: 16px; font-weight: 700; }
+  .info .status { color: rgba(255,255,255,0.5); font-size: 12px; }
   .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
   .msg { max-width: 75%; display: flex; flex-direction: column; gap: 2px; }
   .msg.mine { align-self: flex-end; align-items: flex-end; }
@@ -24,6 +26,7 @@
   .chat-input input { flex: 1; padding: 11px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 24px; color: #fff; font-size: 14px; outline: none; }
   .chat-input input::placeholder { color: rgba(255,255,255,0.3); }
   .send-btn { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #7c6fcd, #5a4fcf); border: none; color: #fff; font-size: 18px; cursor: pointer; }
+  .typing-indicator { color: rgba(255,255,255,0.4); font-size: 12px; padding: 0 16px 6px; min-height: 20px; }
 </style>
 </head>
 <body>
@@ -31,7 +34,12 @@
   <div class="chat-header">
     <a href="/home" class="back">←</a>
     <div class="avatar-sm">{{ other[0] }}</div>
-    <div class="info"><div class="name">{{ other }}</div></div>
+    <div class="info">
+      <div class="name">{{ other }}</div>
+      <div class="status" id="user-status">
+        {% if other in online %}Online{% else %}Offline{% endif %}
+      </div>
+    </div>
   </div>
   <div class="messages" id="messages">
     {% for msg in history %}
@@ -41,52 +49,99 @@
     </div>
     {% endfor %}
   </div>
+  <div class="typing-indicator" id="typing-indicator"></div>
   <div class="chat-input">
     <input type="text" id="msg-input" placeholder="মেসেজ লিখুন..." autocomplete="off">
     <button class="send-btn" onclick="sendMsg()">➤</button>
   </div>
 </div>
+
 <script>
   const me = "{{ me }}";
+  const other = "{{ other }}";
   const room = "{{ room }}";
-  let lastId = {{ history[-1].id if history else 0 }};
 
-  document.getElementById('msg-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') sendMsg();
-  });
+  const socket = io();
+
+  socket.emit('join', { room: room });
+
+  window.onload = () => {
+    scrollBottom();
+  };
+
+  function scrollBottom() {
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  }
 
   function sendMsg() {
     const input = document.getElementById('msg-input');
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
-    fetch('/send', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({room: room, text: text})
+
+    socket.emit('send_message', {
+      room: room,
+      from: me,
+      text: text,
+      time: new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})
     });
+
+    socket.emit('stop_typing', { user: me, room: room });
   }
+
+  document.getElementById('msg-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') sendMsg();
+  });
+
+  let typingTimer;
+  document.getElementById('msg-input').addEventListener('input', function() {
+    socket.emit('typing', { user: me, room: room });
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      socket.emit('stop_typing', { user: me, room: room });
+    }, 1500);
+  });
+
+  socket.on('receive_message', function(msg) {
+    addMessage(msg);
+    if (msg.from !== me) {
+      socket.emit('message_seen', { room: room });
+    }
+  });
 
   function addMessage(msg) {
+    const sender = msg.from || msg.sender;
     const div = document.createElement('div');
-    div.className = 'msg ' + (msg.sender === me ? 'mine' : 'theirs');
-    div.innerHTML = '<div class="bubble">' + msg.text + '</div><div class="time">' + msg.time + '</div>';
+    div.className = 'msg ' + (sender === me ? 'mine' : 'theirs');
+    div.innerHTML = `<div class="bubble">${escapeHtml(msg.text)}</div><div class="time">${msg.time}</div>`;
     document.getElementById('messages').appendChild(div);
-    document.getElementById('messages').scrollTop = 9999;
-    lastId = msg.id;
+    scrollBottom();
   }
 
-  function pollMessages() {
-    fetch('/messages/' + room + '/' + lastId)
-      .then(r => r.json())
-      .then(msgs => { msgs.forEach(addMessage); });
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(text));
+    return d.innerHTML;
   }
 
-  setInterval(pollMessages, 3000);
+  socket.on('typing', function(data) {
+    if (data.room === room && data.user !== me) {
+      document.getElementById('typing-indicator').textContent = other + ' typing...';
+    }
+  });
 
-  window.onload = () => {
-    document.getElementById('messages').scrollTop = 9999;
-  };
+  socket.on('stop_typing', function(data) {
+    if (data.room === room) {
+      document.getElementById('typing-indicator').textContent = '';
+    }
+  });
+
+  socket.on('user_status', function(data) {
+    if (data.user === other) {
+      document.getElementById('user-status').textContent = data.status === 'online' ? 'Online' : 'Offline';
+    }
+  });
 </script>
 </body>
 </html>
