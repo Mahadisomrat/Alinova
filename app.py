@@ -3,7 +3,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime
 import sqlite3, os, json
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 app.secret_key = 'chatbd_secret_2024'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
