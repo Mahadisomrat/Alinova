@@ -1,92 +1,73 @@
 from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime
-import os
-from supabase import create_client, Client
+import sqlite3, os, json
 
 app = Flask(__name__)
-app.secret_key = 'chatbd_secret_2024
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', ping_timeout=60, ping_interval=25)
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+app.secret_key = 'chatbd_secret_2024'
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 online_users = set()
 user_rooms = {}
 
+# ─── Database Setup ────────────────────────────────────────
+def get_db():
+    db = sqlite3.connect('alinova.db')
+    db.row_factory = sqlite3.Row
+    return db
+
+def init_db():
+    db = get_db()
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            profile_pic TEXT,
+            about TEXT DEFAULT 'Hey! I am using ChatBD'
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            text TEXT,
+            file TEXT,
+            file_name TEXT,
+            file_type TEXT,
+            duration TEXT,
+            reply_to TEXT,
+            time TEXT,
+            seen INTEGER DEFAULT 0,
+            edited INTEGER DEFAULT 0,
+            deleted INTEGER DEFAULT 0,
+            reactions TEXT DEFAULT '{}'
+        );
+        CREATE TABLE IF NOT EXISTS groups_table (
+            name TEXT PRIMARY KEY,
+            created_by TEXT,
+            pic TEXT,
+            members TEXT
+        );
+        CREATE TABLE IF NOT EXISTS group_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            text TEXT,
+            file TEXT,
+            file_name TEXT,
+            file_type TEXT,
+            duration TEXT,
+            time TEXT
+        );
+    ''')
+    db.commit()
+    db.close()
+
+init_db()
+
 def get_room_id(u1, u2):
     return '_'.join(sorted([u1, u2]))
 
-def db_get_user(username):
-    res = supabase.table("users").select("*").eq("username", username).execute()
-    return res.data[0] if res.data else None
-
-def db_create_user(username, password):
-    supabase.table("users").insert({
-        "username": username,
-        "password": password,
-        "profile_pic": None,
-        "about": "Hey! I am using Alinova"
-    }).execute()
-
-def db_get_all_users():
-    res = supabase.table("users").select("*").execute()
-    return {u["username"]: u for u in res.data}
-
-def db_get_messages(room):
-    res = supabase.table("messages").select("*").eq("room", room).order("created_at").execute()
-    return res.data
-
-def db_save_message(room, msg):
-    supabase.table("messages").insert({
-        "room": room,
-        "sender": msg["from"],
-        "text": msg.get("text", ""),
-        "file": msg.get("file"),
-        "file_name": msg.get("file_name"),
-        "file_type": msg.get("file_type"),
-        "duration": msg.get("duration"),
-        "reply_to": msg.get("reply_to"),
-        "time": msg["time"],
-        "seen": False,
-        "edited": False,
-        "deleted": False,
-        "reactions": {},
-        "msg_id": msg["id"],
-        "profile_pic": msg.get("profile_pic")
-    }).execute()
-
-def db_get_groups():
-    res = supabase.table("groups").select("*").execute()
-    return {g["name"]: g for g in res.data}
-
-def db_create_group(name, members, created_by):
-    supabase.table("groups").insert({
-        "name": name,
-        "members": members,
-        "created_by": created_by,
-        "pic": None
-    }).execute()
-
-def db_get_group_messages(group_name):
-    res = supabase.table("group_messages").select("*").eq("group_name", group_name).order("created_at").execute()
-    return res.data
-
-def db_save_group_message(group_name, msg):
-    supabase.table("group_messages").insert({
-        "group_name": group_name,
-        "sender": msg["from"],
-        "text": msg.get("text", ""),
-        "file": msg.get("file"),
-        "file_name": msg.get("file_name"),
-        "file_type": msg.get("file_type"),
-        "duration": msg.get("duration"),
-        "time": msg["time"],
-        "profile_pic": msg.get("profile_pic"),
-        "msg_id": msg["id"]
-    }).execute()
-
+# ─── Routes ────────────────────────────────────────────────
 @app.route('/')
 def index():
     return redirect(url_for('login') if 'username' not in session else url_for('home'))
@@ -99,12 +80,18 @@ def register():
         p = request.form['password'].strip()
         if not u or not p:
             error = 'সব তথ্য পূরণ করুন।'
-        elif db_get_user(u):
-            error = 'এই নামে ইউজার আছে।'
         else:
-            db_create_user(u, p)
-            session['username'] = u
-            return redirect(url_for('home'))
+            db = get_db()
+            existing = db.execute('SELECT username FROM users WHERE username=?', (u,)).fetchone()
+            if existing:
+                error = 'এই নামে ইউজার আছে।'
+            else:
+                db.execute('INSERT INTO users (username, password) VALUES (?, ?)', (u, p))
+                db.commit()
+                session['username'] = u
+                db.close()
+                return redirect(url_for('home'))
+            db.close()
     return render_template('register.html', error=error)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -113,8 +100,10 @@ def login():
     if request.method == 'POST':
         u = request.form['username'].strip()
         p = request.form['password'].strip()
-        user = db_get_user(u)
-        if user and user['password'] == p:
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE username=? AND password=?', (u, p)).fetchone()
+        db.close()
+        if user:
             session['username'] = u
             return redirect(url_for('home'))
         error = 'ভুল নাম বা পাসওয়ার্ড।'
@@ -127,66 +116,114 @@ def logout():
 
 @app.route('/home')
 def home():
-    if 'username' not in session: return redirect(url_for('login'))
+    if 'username' not in session:
+        return redirect(url_for('login'))
     me = session['username']
-    all_users = db_get_all_users()
-    others = [u for u in all_users if u != me]
-    groups = db_get_groups()
-    my_groups = [g for g, d in groups.items() if me in d.get('members', [])]
-    return render_template('home.html', username=me, users=others,
-                           online=list(online_users), users_data=all_users,
-                           groups=my_groups, groups_data=groups)
+    db = get_db()
+    others = db.execute('SELECT * FROM users WHERE username != ?', (me,)).fetchall()
+    all_groups = db.execute('SELECT * FROM groups_table').fetchall()
+    db.close()
+
+    my_groups = []
+    groups_data = {}
+    for g in all_groups:
+        members = json.loads(g['members'])
+        groups_data[g['name']] = {'members': members, 'created_by': g['created_by'], 'pic': g['pic']}
+        if me in members:
+            my_groups.append(g['name'])
+
+    users_data = {u['username']: dict(u) for u in others}
+    return render_template('home.html', username=me, users=[u['username'] for u in others],
+                           online=list(online_users), users_data=users_data,
+                           groups=my_groups, groups_data=groups_data)
 
 @app.route('/chat/<other>')
 def chat(other):
-    if 'username' not in session: return redirect(url_for('login'))
+    if 'username' not in session:
+        return redirect(url_for('login'))
     me = session['username']
-    if not db_get_user(other): return redirect(url_for('home'))
+    db = get_db()
+    other_user = db.execute('SELECT * FROM users WHERE username=?', (other,)).fetchone()
+    if not other_user:
+        db.close()
+        return redirect(url_for('home'))
     room = get_room_id(me, other)
-    history = db_get_messages(room)
-    all_users = db_get_all_users()
+    history_rows = db.execute('SELECT * FROM messages WHERE room=? ORDER BY id ASC', (room,)).fetchall()
+    all_users = db.execute('SELECT * FROM users').fetchall()
+    db.close()
+
+    history = []
+    for m in history_rows:
+        msg = dict(m)
+        msg['reactions'] = json.loads(msg['reactions'] or '{}')
+        history.append(msg)
+
+    users_data = {u['username']: dict(u) for u in all_users}
     return render_template('chat.html', me=me, other=other,
-                           history=history, room=room, users_data=all_users,
+                           history=history, room=room, users_data=users_data,
                            online=list(online_users))
 
+# ✅ BUG FIX: <n> → <name>
 @app.route('/group/<name>')
 def group_chat(name):
-    if 'username' not in session: return redirect(url_for('login'))
+    if 'username' not in session:
+        return redirect(url_for('login'))
     me = session['username']
-    groups = db_get_groups()
-    if name not in groups or me not in groups[name].get('members', []):
+    db = get_db()
+    group = db.execute('SELECT * FROM groups_table WHERE name=?', (name,)).fetchone()
+    if not group or me not in json.loads(group['members']):
+        db.close()
         return redirect(url_for('home'))
-    history = db_get_group_messages(name)
-    all_users = db_get_all_users()
+    history_rows = db.execute('SELECT * FROM group_messages WHERE group_name=? ORDER BY id ASC', (name,)).fetchall()
+    all_users = db.execute('SELECT * FROM users').fetchall()
+    db.close()
+
+    history = [dict(m) for m in history_rows]
+    users_data = {u['username']: dict(u) for u in all_users}
+    group_dict = {'members': json.loads(group['members']), 'created_by': group['created_by'], 'pic': group['pic']}
     return render_template('group_chat.html', me=me, group_name=name,
-                           history=history, group=groups[name], users_data=all_users)
+                           history=history, group=group_dict, users_data=users_data)
 
 @app.route('/upload_pic', methods=['POST'])
 def upload_pic():
-    if 'username' not in session: return jsonify({'error': 'not logged in'}), 401
+    if 'username' not in session:
+        return jsonify({'error': 'not logged in'}), 401
     data = request.get_json()
     pic = data.get('pic')
     if pic:
-        supabase.table("users").update({"profile_pic": pic}).eq("username", session['username']).execute()
+        db = get_db()
+        db.execute('UPDATE users SET profile_pic=? WHERE username=?', (pic, session['username']))
+        db.commit()
+        db.close()
         socketio.emit('profile_updated', {'username': session['username'], 'profile_pic': pic})
         return jsonify({'success': True})
     return jsonify({'error': 'no image'}), 400
 
 @app.route('/create_group', methods=['POST'])
 def create_group():
-    if 'username' not in session: return jsonify({'error': 'not logged in'}), 401
+    if 'username' not in session:
+        return jsonify({'error': 'not logged in'}), 401
     data = request.get_json()
     name = data.get('name', '').strip()
     members = data.get('members', [])
     me = session['username']
-    if not name: return jsonify({'error': 'নাম দিন'}), 400
-    groups = db_get_groups()
-    if name in groups: return jsonify({'error': 'এই নামে গ্রুপ আছে'}), 400
-    if me not in members: members.append(me)
-    db_create_group(name, members, me)
+    if not name:
+        return jsonify({'error': 'নাম দিন'}), 400
+    db = get_db()
+    existing = db.execute('SELECT name FROM groups_table WHERE name=?', (name,)).fetchone()
+    if existing:
+        db.close()
+        return jsonify({'error': 'এই নামে গ্রুপ আছে'}), 400
+    if me not in members:
+        members.append(me)
+    db.execute('INSERT INTO groups_table (name, created_by, members) VALUES (?, ?, ?)',
+               (name, me, json.dumps(members)))
+    db.commit()
+    db.close()
     socketio.emit('group_created', {'name': name, 'members': members})
     return jsonify({'success': True, 'name': name})
 
+# ─── Socket Events ─────────────────────────────────────────
 @socketio.on('connect')
 def on_connect():
     if 'username' in session:
@@ -219,48 +256,90 @@ def on_stop_typing(data):
 def handle_message(data):
     room = data['room']
     sender = data['from']
+    time_str = datetime.now().strftime('%I:%M %p')
+
+    db = get_db()
+    sender_data = db.execute('SELECT profile_pic FROM users WHERE username=?', (sender,)).fetchone()
+    profile_pic = sender_data['profile_pic'] if sender_data else None
+
+    cursor = db.execute('''INSERT INTO messages 
+        (room, sender, text, file, file_name, file_type, duration, reply_to, time, reactions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (room, sender, data.get('text',''), data.get('file'), data.get('file_name'),
+         data.get('file_type'), data.get('duration'), str(data.get('reply_to','')),
+         time_str, '{}'))
+    msg_id = cursor.lastrowid
+    db.commit()
+    db.close()
+
     msg = {
+        'id': msg_id,
         'from': sender,
+        'sender': sender,
         'text': data.get('text', ''),
         'file': data.get('file'),
         'file_name': data.get('file_name'),
         'file_type': data.get('file_type'),
         'duration': data.get('duration'),
         'reply_to': data.get('reply_to'),
-        'time': datetime.now().strftime('%I:%M %p'),
+        'time': time_str,
         'seen': False,
         'edited': False,
         'deleted': False,
         'reactions': {},
-        'profile_pic': data.get('profile_pic'),
-        'id': datetime.now().strftime('%f')
+        'profile_pic': profile_pic
     }
+
     emit('receive_message', msg, room=room)
-    emit('new_notification', {
-        'from': sender,
-        'text': data.get('text', '📎 File'),
-        'room': room,
-        'profile_pic': data.get('profile_pic')
-    }, broadcast=True)
-    db_save_message(room, msg)
+
+    # ✅ FIX: Notification শুধু receiver পাবে
+    receiver = None
+    parts = room.split('_')
+    for p in parts:
+        if p != sender:
+            receiver = p
+            break
+
+    if receiver and receiver in user_rooms:
+        emit('new_notification', {
+            'from': sender,
+            'text': data.get('text', '📎 File'),
+            'room': room,
+            'profile_pic': profile_pic
+        }, room=user_rooms[receiver])
 
 @socketio.on('send_group_message')
 def handle_group_message(data):
     gname = data['group']
     sender = data['from']
+    time_str = datetime.now().strftime('%I:%M %p')
+
+    db = get_db()
+    sender_data = db.execute('SELECT profile_pic FROM users WHERE username=?', (sender,)).fetchone()
+    profile_pic = sender_data['profile_pic'] if sender_data else None
+
+    cursor = db.execute('''INSERT INTO group_messages 
+        (group_name, sender, text, file, file_name, file_type, duration, time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        (gname, sender, data.get('text',''), data.get('file'),
+         data.get('file_name'), data.get('file_type'), data.get('duration'), time_str))
+    msg_id = cursor.lastrowid
+    db.commit()
+    db.close()
+
     msg = {
+        'id': msg_id,
         'from': sender,
+        'sender': sender,
         'text': data.get('text', ''),
         'file': data.get('file'),
         'file_name': data.get('file_name'),
         'file_type': data.get('file_type'),
         'duration': data.get('duration'),
-        'time': datetime.now().strftime('%I:%M %p'),
-        'profile_pic': data.get('profile_pic'),
-        'id': datetime.now().strftime('%f')
+        'time': time_str,
+        'profile_pic': profile_pic
     }
     emit('receive_group_message', msg, room='group_' + gname)
-    db_save_group_message(gname, msg)
 
 @socketio.on('join_group')
 def on_join_group(data):
@@ -274,7 +353,10 @@ def on_seen(data):
 def on_delete(data):
     room = data['room']
     msg_id = data['msg_id']
-    supabase.table("messages").update({"deleted": True, "text": ""}).eq("room", room).eq("msg_id", msg_id).execute()
+    db = get_db()
+    db.execute('UPDATE messages SET text="", deleted=1 WHERE id=? AND room=?', (msg_id, room))
+    db.commit()
+    db.close()
     emit('message_deleted', {'room': room, 'msg_id': msg_id}, room=room)
 
 @socketio.on('edit_message')
@@ -282,7 +364,10 @@ def on_edit(data):
     room = data['room']
     msg_id = data['msg_id']
     new_text = data['new_text']
-    supabase.table("messages").update({"text": new_text, "edited": True}).eq("room", room).eq("msg_id", msg_id).execute()
+    db = get_db()
+    db.execute('UPDATE messages SET text=?, edited=1 WHERE id=? AND room=?', (new_text, msg_id, room))
+    db.commit()
+    db.close()
     emit('message_edited', {'room': room, 'msg_id': msg_id, 'new_text': new_text}, room=room)
 
 @socketio.on('react_message')
@@ -290,12 +375,15 @@ def on_react(data):
     room = data['room']
     msg_id = data['msg_id']
     emoji = data['emoji']
-    res = supabase.table("messages").select("reactions").eq("room", room).eq("msg_id", msg_id).execute()
-    if res.data:
-        reactions = res.data[0].get("reactions") or {}
+    db = get_db()
+    row = db.execute('SELECT reactions FROM messages WHERE id=? AND room=?', (msg_id, room)).fetchone()
+    if row:
+        reactions = json.loads(row['reactions'] or '{}')
         reactions[emoji] = reactions.get(emoji, 0) + 1
-        supabase.table("messages").update({"reactions": reactions}).eq("room", room).eq("msg_id", msg_id).execute()
+        db.execute('UPDATE messages SET reactions=? WHERE id=?', (json.dumps(reactions), msg_id))
+        db.commit()
         emit('message_reaction', {'room': room, 'msg_id': msg_id, 'reactions': reactions}, room=room)
+    db.close()
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
